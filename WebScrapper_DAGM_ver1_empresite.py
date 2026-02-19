@@ -21,7 +21,8 @@ from tkinter import messagebox, ttk
 
 OUTPUT_DIR = Path("resultados")
 OUTPUT_DIR.mkdir(exist_ok=True)
-CAPTCHA_CHECK_ENABLED = False  # Desactivar temporalmente para testing
+# Deshabilitado: la detección automática de captcha estaba dando falsos positivos.
+CAPTCHA_CHECK_ENABLED = False
 EXCLUDE_HTML_PAGES = {
     "faqs.html",
     "faq.html",
@@ -32,16 +33,40 @@ EXCLUDE_HTML_PAGES = {
     "aviso-legal.html",
     "terminos.html",
     "terminos-condiciones.html",
+    "terminos-y-condiciones.html",
+    "terminos-condiciones-de-uso.html",
+    "condiciones.html",
+    "condiciones-de-uso.html",
+    "condiciones-generales.html",
+    "condiciones-generales-de-uso.html",
+    "politica-privacidad-y-cookies.html",
+    "politica-de-privacidad.html",
+    "politica-de-cookies.html",
+    # Variantes en inglés observadas en empresite:
+    "privacy_policy.html",
+    "terms_of_use.html",
     "contacto.html",
     "about.html",
 }
 
+# Bloqueo por patrones (evita que entren paginas legales/soporte aunque cambie el slug exacto).
+EXCLUDE_HTML_PATTERNS = re.compile(
+    r"(?:^|/)(?:"
+    r"terminos|condiciones|privacidad|politica|cookies|cookie|aviso-legal|legal|rgpd|gdpr|"
+    r"privacy|terms|use"
+    r"contacto|about|faqs?|sitemap|mapa|help|ayuda"
+    r")(?:-|_|/|$)",
+    re.IGNORECASE,
+)
+
 CHROME_PROFILE_DIR = Path("selenium_profile_empresite")
-DETAIL_DELAY_SECONDS = (3.0, 7.0)
-PAGE_DELAY_SECONDS = (6.0, 12.0)
-COOLDOWN_EVERY_N_DETAILS = 4
-COOLDOWN_SECONDS = (45.0, 120.0)
-BROWSER_HIDDEN_POS = (-32000, -32000)  # Windows: off-screen
+DETAIL_DELAY_SECONDS = (0.0, 0.0)
+PAGE_DELAY_SECONDS = (0.0, 0.0)
+COOLDOWN_EVERY_N_DETAILS = 0
+COOLDOWN_SECONDS = (0.0, 0.0)
+# Para testing/interaccion con captcha: mantener navegador visible.
+BROWSER_HIDE_ENABLED = False
+BROWSER_HIDDEN_POS = (-32000, -32000)  # Windows: off-screen (si se activa)
 BROWSER_VISIBLE_POS = (60, 60)
 BROWSER_VISIBLE_SIZE = (1200, 900)
 
@@ -175,20 +200,8 @@ def normalizar_web_empresite(raw_url):
 
 
 def es_pagina_captcha_html(html):
-    if not CAPTCHA_CHECK_ENABLED:
-        return False
-    texto = (html or "").lower()
-    return any(
-        k in texto
-        for k in [
-            "captcha",
-            "g-recaptcha",
-            "hcaptcha",
-            "are you human",
-            "unusual traffic",
-            "cf-chl",
-        ]
-    )
+    # Mantener API por compatibilidad, pero deshabilitada para testing.
+    return False
 
 
 def extraer_url_ficha_empresite(anchor):
@@ -228,6 +241,10 @@ def extraer_url_ficha_empresite(anchor):
     if ultimo in EXCLUDE_HTML_PAGES:
         return None
 
+    # Excluir paginas no-empresa por patrones (ej. "terminos-y-condiciones", "politica-de-privacidad", etc.)
+    if EXCLUDE_HTML_PATTERNS.search(path):
+        return None
+
     return url
 
 
@@ -242,9 +259,8 @@ def nombre_desde_url_ficha(detail_url):
 
 def crear_driver(use_profile=True):
     options = Options()
-    # Start off-screen to avoid flashing in the middle of the screen.
-    options.add_argument(f"--window-position={BROWSER_HIDDEN_POS[0]},{BROWSER_HIDDEN_POS[1]}")
-    options.add_argument("--window-size=900,700")
+    # Mantener visible para poder interactuar con cookies/captcha.
+    options.add_argument("--start-maximized")
     options.add_argument("--log-level=3")
     options.add_argument("--disable-logging")
     options.add_argument("--disable-blink-features=AutomationControlled")
@@ -264,6 +280,8 @@ def crear_driver(use_profile=True):
 
 
 def ocultar_navegador(driver):
+    if not BROWSER_HIDE_ENABLED:
+        return
     try:
         driver.set_window_position(BROWSER_HIDDEN_POS[0], BROWSER_HIDDEN_POS[1])
         driver.minimize_window()
@@ -318,7 +336,6 @@ def intentar_aceptar_cookies(driver, log_func, timeout=6):
                         driver.execute_script("arguments[0].click();", elem)
                     except Exception:
                         elem.click()
-                    time.sleep(0.6)
                     log_func("Banner de cookies aceptado automaticamente.")
                     return True
         except Exception:
@@ -330,18 +347,16 @@ def humanizar_pagina(driver):
     """
     Pequeñas acciones para parecer navegación humana (sin ser intrusivo).
     """
-    try:
-        driver.execute_script("window.scrollTo(0, Math.min(800, document.body.scrollHeight));")
-        time.sleep(random.uniform(0.3, 0.9))
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(random.uniform(0.2, 0.6))
-    except Exception:
-        return
+    # Deshabilitado: máxima velocidad sin sleeps.
+    return
 
 
-def esperar_y_obtener_html(driver, url, log_func, timeout=25):
+def esperar_y_obtener_html(driver, url, log_func, timeout=25, esperar_email=False):
     driver.get(url)
     try:
+        WebDriverWait(driver, timeout).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
         WebDriverWait(driver, timeout).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
@@ -349,25 +364,15 @@ def esperar_y_obtener_html(driver, url, log_func, timeout=25):
         pass
     intentar_aceptar_cookies(driver, log_func, timeout=3)
     humanizar_pagina(driver)
-    time.sleep(random.uniform(1.0, 2.5))
+    if esperar_email:
+        try:
+            WebDriverWait(driver, 3).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "a.email[href^='mailto:']"))
+            )
+        except Exception:
+            log_func("Email no encontrado en 3s. Pausa 7s para resolver posible captcha/cookies...")
+            time.sleep(7)
     html = driver.page_source or ""
-    if es_pagina_captcha_html(html):
-        mostrar_navegador(driver)
-        log_func(
-            "Bloqueo detectado (captcha o muro). "
-            "Revisa/acepta cookies o captcha en navegador; espero hasta 240s."
-        )
-        start = time.time()
-        while time.time() - start < 240:
-            time.sleep(4)
-            intentar_aceptar_cookies(driver, log_func, timeout=1)
-            html = driver.page_source or ""
-            if not es_pagina_captcha_html(html):
-                log_func("Bloqueo resuelto. Continuando...")
-                ocultar_navegador(driver)
-                return html, True
-        log_func("No se resolvio captcha/cookies a tiempo. Parando scraping.")
-        return html, False
     return html, True
 
 
@@ -398,19 +403,20 @@ def extraer_datos_ficha_desde_html(html):
     return datos
 
 
-def iniciar_scraping_empresite(base_url, max_paginas, log_func, use_profile=True):
+def iniciar_scraping_empresite(base_url, max_paginas, log_func, use_profile=True, pagina_inicio=1):
     tipo, localidad = extraer_tipo_localidad_empresite(base_url)
     empresas_totales = []
     vistas = set()
+    procesadas = set()  # url_detalle normalizada para no repetir entre paginas
 
     driver = crear_driver(use_profile=use_profile)
     try:
-        ocultar_navegador(driver)
         detalles_ok = 0
-        for pagina in range(1, max_paginas + 1):
+        pagina_inicio = max(1, int(pagina_inicio or 1))
+        for pagina in range(pagina_inicio, max_paginas + 1):
             list_url = construir_url_empresite(base_url, pagina)
             log_func(f"Scrapeando pagina {pagina}: {list_url}")
-            html, ok = esperar_y_obtener_html(driver, list_url, log_func)
+            html, ok = esperar_y_obtener_html(driver, list_url, log_func, esperar_email=False)
             if not ok:
                 break
 
@@ -430,7 +436,13 @@ def iniciar_scraping_empresite(base_url, max_paginas, log_func, use_profile=True
                     seen_page.add(detail)
                     detail_urls.append((detail, a.get_text(" ", strip=True), a.get("title", "")))
 
+            empresas_pagina = []
             for detail_url, txt, title in detail_urls:
+                url_norm = (detail_url or "").strip().lower()
+                if not url_norm or url_norm in procesadas:
+                    continue
+                procesadas.add(url_norm)
+
                 data = new_empresa(localidad_default=localidad)
                 data["url_detalle"] = detail_url
 
@@ -440,7 +452,7 @@ def iniciar_scraping_empresite(base_url, max_paginas, log_func, use_profile=True
                 else:
                     data["nombre"] = nombre_desde_url_ficha(detail_url)
 
-                detail_html, ok_detail = esperar_y_obtener_html(driver, detail_url, log_func)
+                detail_html, ok_detail = esperar_y_obtener_html(driver, detail_url, log_func, esperar_email=True)
                 if not ok_detail:
                     break
                 ficha = extraer_datos_ficha_desde_html(detail_html)
@@ -454,20 +466,20 @@ def iniciar_scraping_empresite(base_url, max_paginas, log_func, use_profile=True
                     data["email_posible_contacto"] = f"contacto@{dominio}"
                     data["email_posible_administracion"] = f"administracion@{dominio}"
 
-                clave = (data["nombre"], data["telefono"], data["web"], data["url_detalle"])
+                # Deduplicacion global: la URL de ficha es el identificador mas estable.
+                clave = url_norm
                 if clave not in vistas and datosvalidos(data):
                     vistas.add(clave)
                     empresas_totales.append(data)
+                    empresas_pagina.append(data)
 
                 detalles_ok += 1
-                time.sleep(random.uniform(*DETAIL_DELAY_SECONDS))
-                if detalles_ok % COOLDOWN_EVERY_N_DETAILS == 0:
-                    cooldown = random.uniform(*COOLDOWN_SECONDS)
-                    log_func(f"Cooldown anti-bloqueo: esperando {cooldown:.0f}s tras {detalles_ok} fichas.")
-                    time.sleep(cooldown)
+                # Sin sleeps/cooldowns: máximo ritmo. Si aparece captcha, se esperará en esperar_y_obtener_html.
 
             log_func(f"Pagina {pagina} procesada ({len(empresas_totales)} empresas acumuladas)")
-            time.sleep(random.uniform(*PAGE_DELAY_SECONDS))
+            guardar_resultado_pagina(base_url, tipo, localidad, pagina, empresas_pagina, log_func)
+            guardar_resultado_acumulado_parcial(base_url, tipo, localidad, pagina, empresas_totales, log_func)
+            # Sin sleep entre paginas.
     finally:
         driver.quit()
 
@@ -481,19 +493,60 @@ def guardar_resultado(base_url, tipo, localidad, empresas_totales, log_func):
         "resultados": empresas_totales,
     }
     output = OUTPUT_DIR / generar_nombre_archivo(base_url)
-    with open(output, "w", encoding="utf-8") as f:
+    tmp = output.with_suffix(output.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(resultado_final, f, ensure_ascii=False, indent=4)
+    tmp.replace(output)
     log_func(f"Scraping finalizado. Total empresas: {len(empresas_totales)}")
     log_func(f"Guardado en: {output}")
 
 
-def iniciar_scraping(base_url, max_paginas, log_func, use_profile=True):
+def guardar_resultado_pagina(base_url, tipo, localidad, pagina, empresas_pagina, log_func):
+    """
+    Checkpoint: guarda resultados de UNA pagina para no perder datos si se corta el proceso.
+    """
+    output_base = OUTPUT_DIR / generar_nombre_archivo(base_url)
+    output = output_base.with_name(f"{output_base.stem}_pg{pagina:03d}{output_base.suffix}")
+
+    payload = {
+        "localidad": localidad,
+        "tipo_empresa": tipo,
+        "pagina": pagina,
+        "resultados": empresas_pagina,
+    }
+
+    tmp = output.with_suffix(output.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=4)
+    tmp.replace(output)
+    log_func(f"Checkpoint pagina {pagina}: {len(empresas_pagina)} empresas guardadas en: {output}")
+
+
+def guardar_resultado_acumulado_parcial(base_url, tipo, localidad, pagina, empresas_totales, log_func):
+    """
+    Checkpoint: actualiza el JSON acumulado tras cada pagina.
+    """
+    output = OUTPUT_DIR / generar_nombre_archivo(base_url)
+    payload = {
+        "localidad": localidad,
+        "tipo_empresa": tipo,
+        "pagina_hasta": pagina,
+        "resultados": empresas_totales,
+    }
+    tmp = output.with_suffix(output.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=4)
+    tmp.replace(output)
+    log_func(f"Checkpoint acumulado hasta pagina {pagina}: {len(empresas_totales)} empresas en: {output}")
+
+
+def iniciar_scraping(base_url, max_paginas, log_func, use_profile=True, pagina_inicio=1):
     dominio = obtener_dominio(base_url) or ""
     if "empresite.eleconomista.es" not in dominio:
         log_func("Este scraper es exclusivo para empresite.eleconomista.es")
         return
     tipo, localidad, empresas_totales = iniciar_scraping_empresite(
-        base_url, max_paginas, log_func, use_profile=use_profile
+        base_url, max_paginas, log_func, use_profile=use_profile, pagina_inicio=pagina_inicio
     )
     guardar_resultado(base_url, tipo, localidad, empresas_totales, log_func)
 
@@ -520,10 +573,16 @@ def lanzar_gui():
         running["value"] = is_running
         btn_scrap.config(state=("disabled" if is_running else "normal"))
 
-    def worker(url, paginas, solo_email, use_profile):
+    def worker(url, pagina_inicio, paginas, solo_email, use_profile):
         try:
             url_filtrada = aplicar_filtros_empresite(url, solo_email)
-            iniciar_scraping(url_filtrada, paginas, log, use_profile=use_profile)
+            iniciar_scraping(
+                url_filtrada,
+                paginas,
+                log,
+                use_profile=use_profile,
+                pagina_inicio=pagina_inicio,
+            )
             root.after(0, lambda: messagebox.showinfo("Finalizado", "Scraping completado"))
         except Exception as exc:
             err_msg = str(exc)
@@ -536,6 +595,7 @@ def lanzar_gui():
         if running["value"]:
             return
         try:
+            pagina_inicio = int(entry_pagina_inicio.get())
             paginas = int(entry_paginas.get())
         except ValueError:
             messagebox.showerror("Error", "Numero de paginas invalido")
@@ -543,7 +603,13 @@ def lanzar_gui():
         set_running_state(True)
         threading.Thread(
             target=worker,
-            args=(entry_url.get().strip(), paginas, var_solo_email.get(), var_use_profile.get()),
+            args=(
+                entry_url.get().strip(),
+                pagina_inicio,
+                paginas,
+                var_solo_email.get(),
+                var_use_profile.get(),
+            ),
             daemon=True,
         ).start()
         root.after(120, flush_logs)
@@ -564,6 +630,11 @@ def lanzar_gui():
     entry_paginas = ttk.Entry(frame)
     entry_paginas.insert(0, "3")
     entry_paginas.pack(fill="x")
+
+    ttk.Label(frame, text="Pagina inicial:").pack(anchor="w")
+    entry_pagina_inicio = ttk.Entry(frame)
+    entry_pagina_inicio.insert(0, "1")
+    entry_pagina_inicio.pack(fill="x")
 
     var_solo_email = tk.BooleanVar(value=True)
     ttk.Checkbutton(

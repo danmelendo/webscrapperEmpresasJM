@@ -1,0 +1,24 @@
+2026/02/15-18:23:34.579 8a30 Reusing MANIFEST C:\Users\danie\Documents\IFP Material\Prácticas\webscrapperEmpresasJM\selenium_profile_empresite\Default\Local Storage\leveldb/MANIFEST-000001
+2026/02/15-18:23:34.583 8a30 Recovering log #22
+2026/02/15-18:23:34.584 8a30 Reusing old log C:\Users\danie\Documents\IFP Material\Prácticas\webscrapperEmpresasJM\selenium_profile_empresite\Default\Local Storage\leveldb/000022.log 
+2026/02/15-18:24:04.226 8e54 Level-0 table #26: started
+2026/02/15-18:24:04.232 8e54 Level-0 table #26: 14784 bytes OK
+2026/02/15-18:24:04.235 8e54 Delete type=0 #22
+2026/02/15-18:42:07.060 8e54 Level-0 table #28: started
+2026/02/15-18:42:07.066 8e54 Level-0 table #28: 13475 bytes OK
+2026/02/15-18:42:07.069 8e54 Delete type=0 #25
+2026/02/15-18:42:07.070 8e54 Compacting 4@0 + 1@1 files
+2026/02/15-18:42:07.076 8e54 Generated table #29@0: 711 keys, 21944 bytes
+2026/02/15-18:42:07.076 8e54 Compacted 4@0 + 1@1 files => 21944 bytes
+2026/02/15-18:42:07.078 8e54 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/02/15-18:42:07.078 8e54 Delete type=2 #17
+2026/02/15-18:42:07.078 8e54 Delete type=2 #20
+2026/02/15-18:42:07.079 8e54 Delete type=2 #23
+2026/02/15-18:42:07.079 8e54 Delete type=2 #26
+2026/02/15-18:42:07.079 8e54 Delete type=2 #28
+2026/02/15-18:53:58.049 8e54 Level-0 table #31: started
+2026/02/15-18:53:58.054 8e54 Level-0 table #31: 13553 bytes OK
+2026/02/15-18:53:58.057 8e54 Delete type=0 #27
+2026/02/15-19:08:42.076 8e54 Level-0 table #33: started
+2026/02/15-19:08:42.082 8e54 Level-0 table #33: 13368 bytes OK
+2026/02/15-19:08:42.084 8e54 Delete type=0 #30
