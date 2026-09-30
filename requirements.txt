@@ -1,0 +1,9 @@
+# Scrapers
+requests>=2.31
+beautifulsoup4>=4.12
+selenium>=4.20
+# Consultor de base de datos / envío de emails
+mysql-connector-python>=8.0
+python-dotenv>=1.0
+# tkinter viene incluido con el instalador oficial de Python para Windows.
+# En Linux: sudo apt install python3-tk
